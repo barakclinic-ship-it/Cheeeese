@@ -389,6 +389,12 @@
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg></span></div>
       <div class="modeText"><b>Timer</b><span>Tap the shutter and it counts down a fixed time</span></div>
     </div>
+    <div id="timerOpts" class="hidden">
+      <div class="pillBtn" data-sec="5">5s</div>
+      <div class="pillBtn" data-sec="10">10s</div>
+      <div class="pillBtn" data-sec="15">15s</div>
+    </div>
+
     <div class="modeCard" data-mode="face">
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M8.5 15c1 1 2 1.5 3.5 1.5s2.5-.5 3.5-1.5"/></svg></span></div>
       <div class="modeText"><b>Face Mode</b><span>Fires automatically once everyone is fully in frame — no half heads, no turned heads</span></div>
@@ -401,13 +407,6 @@
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg></span></div>
       <div class="modeText"><b>Voice Mode</b><span>Listens, and fires when it hears everyone say the magic word</span></div>
     </div>
-
-    <div id="timerOpts" class="hidden">
-      <div class="pillBtn" data-sec="5">5s</div>
-      <div class="pillBtn" data-sec="10">10s</div>
-      <div class="pillBtn" data-sec="15">15s</div>
-    </div>
-
     <div id="voiceOpts" class="hidden">
       <div class="wheelLabel">Word to say</div>
       <div class="wheelPicker">
@@ -479,8 +478,8 @@
   <!-- permission error -->
   <div id="permLayer">
     <span class="logoSlot"></span>
-    <div class="permTitle">No camera access</div>
-    <div class="permText">To take your photo, cheeeese needs camera access. Allow it in your browser and try again.</div>
+    <div class="permTitle" id="permTitle">No camera access</div>
+    <div class="permText" id="permText">To take your photo, cheeeese needs camera access. Allow it in your browser and try again.</div>
     <button class="retryBtn" id="retryPerm">Try again</button>
   </div>
 
@@ -528,6 +527,8 @@ const lastShotImg = document.getElementById('lastShotImg');
 const loadingLayer = document.getElementById('loadingLayer');
 const loadingText = document.getElementById('loadingText');
 const permLayer = document.getElementById('permLayer');
+const permTitle = document.getElementById('permTitle');
+const permText = document.getElementById('permText');
 const retryPerm = document.getElementById('retryPerm');
 
 const modeShortNames = { face:'Face', smile:'Smile', voice:'Voice' };
@@ -690,6 +691,11 @@ async function initModel(){
 
 async function startCamera(){
   loadingText.textContent = 'Opening camera…';
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    const err = new Error('camera API unavailable');
+    err.code = 'insecure-context';
+    throw err;
+  }
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   stream = await navigator.mediaDevices.getUserMedia({
     video:{ facingMode: state.facing, width:{ideal:1280}, height:{ideal:960} },
@@ -709,6 +715,12 @@ function ensureModelLoading(){
   return modelLoadingPromise;
 }
 
+function showPermError(title, text){
+  permTitle.textContent = title;
+  permText.textContent = text;
+  permLayer.style.display = 'flex';
+}
+
 async function enterCamera(){
   startBtn.disabled = true;
   permLayer.style.display = 'none';
@@ -716,8 +728,22 @@ async function enterCamera(){
     loadingLayer.style.display = 'flex';
     loadingText.textContent = 'Getting ready…';
   }
+
+  // model download and camera permission are two independent things that can
+  // fail for different reasons — keep their errors separate so the message
+  // actually says what went wrong instead of a generic "no camera" every time
   try{
     if(!modelReady) await ensureModelLoading();
+  }catch(err){
+    console.error('model load failed', err);
+    loadingLayer.style.display = 'none';
+    showPermError('Couldn\'t load face detection', 'Check your internet connection, then try again. (This app downloads a small face-detection model the first time it runs.)');
+    startBtn.disabled = false;
+    modelLoadingPromise = null; // allow a fresh attempt next time
+    return;
+  }
+
+  try{
     loadingText.textContent = 'Opening camera…';
     loadingLayer.style.display = 'flex';
     await startCamera();
@@ -729,9 +755,17 @@ async function enterCamera(){
     statusPill.innerHTML = '<b>Ready</b> · looking for faces…';
     armLoop();
   }catch(err){
-    console.error(err);
+    console.error('camera open failed', err);
     loadingLayer.style.display = 'none';
-    permLayer.style.display = 'flex';
+    if(err.code === 'insecure-context'){
+      showPermError('Camera needs a secure page', 'This only works over https:// (or on the published site) — not when the file is opened directly from disk.');
+    } else if(err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'){
+      showPermError('Camera access blocked', 'Allow camera access for this site in your browser settings, then try again.');
+    } else if(err.name === 'NotFoundError' || err.name === 'OverconstrainedError'){
+      showPermError('No camera found', 'This device doesn\'t seem to have a usable camera.');
+    } else {
+      showPermError('Couldn\'t open the camera', 'Something went wrong starting the camera. Try again.');
+    }
   }
   startBtn.disabled = false;
 }
