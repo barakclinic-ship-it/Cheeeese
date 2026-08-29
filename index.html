@@ -6,19 +6,16 @@
 <title>cheeeese</title>
 <style>
   :root{
-    --bg:#0d0d12;
-    --panel:#17171d;
-    --panel-2:#202027;
-    --line:rgba(255,255,255,.08);
+    --bg:#ffffff;
+    --panel:#ffffff;
+    --panel-2:#faf8f3;
+    --line:rgba(20,20,26,.14);
     --cheese-light:#FFD34E;
     --cheese:#F5A623;
     --cheese-dark:#E08E1D;
     --ink:#14141a;
-    --green:#3ddc84;
-    --red:#ff5c5c;
-    --blue:#4ea1ff;
-    --text:#f4f3f0;
-    --muted:#9a9aa2;
+    --text:#14141a;
+    --muted:#6c6c74;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{
@@ -29,12 +26,19 @@
   }
   #app{position:fixed; inset:0; overflow:hidden;}
 
+  /* ---------- icons (yellow outline, no fill) ---------- */
+  .icon{
+    width:20px; height:20px; flex:0 0 auto; display:block;
+    color:var(--cheese);
+  }
+  .icon svg{ width:100%; height:100%; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .modeCard.selected .icon{ color:var(--ink); }
+
   /* ---------- brand ---------- */
   .logoIcon{ display:block; }
   .wordmark{ font-weight:800; letter-spacing:-.01em; white-space:nowrap; }
   .wordmark .wmDark{ color:var(--ink); }
   .wordmark .wmYellow{ background:linear-gradient(180deg,var(--cheese-light),var(--cheese)); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .wordmark.onDark .wmDark{ color:#fff; }
   .tagline{ font-size:10px; font-weight:700; letter-spacing:.22em; color:var(--muted); text-transform:uppercase; }
 
   #brandWatermark{
@@ -42,9 +46,11 @@
     display:flex; align-items:center; gap:6px;
     opacity:.95; pointer-events:none;
   }
-  #brandWatermark .logoIcon{ width:92px; height:auto; filter:drop-shadow(0 2px 10px rgba(0,0,0,.5)); }
+  #brandWatermark .logoIcon{ width:92px; height:auto; filter:drop-shadow(0 2px 10px rgba(0,0,0,.35)); }
 
   /* ---------- viewfinder ---------- */
+  #cameraScreen{ position:absolute; inset:0; display:none; }
+  #cameraScreen.active{ display:block; }
   #camWrap{position:absolute; inset:0; background:#000;}
   video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
@@ -52,74 +58,97 @@
   video.mirror{transform:scaleX(-1);}
   #frameGlow{
     position:absolute; inset:0; pointer-events:none;
-    box-shadow: inset 0 0 0 3px rgba(255,255,255,.08);
+    box-shadow: inset 0 0 0 2px rgba(20,20,26,.35);
     transition:box-shadow .25s ease;
   }
-  #frameGlow.ready{ box-shadow: inset 0 0 0 5px var(--green); }
-  #frameGlow.watching{ box-shadow: inset 0 0 0 3px var(--cheese); }
-  #frameGlow.listening{ box-shadow: inset 0 0 0 3px var(--blue); }
+  #frameGlow.watching{ box-shadow: inset 0 0 0 2px rgba(20,20,26,.35); animation:frameWatch 1.6s ease-in-out infinite; }
+  #frameGlow.listening{ box-shadow: inset 0 0 0 2px rgba(20,20,26,.35); animation:frameWatch 1.6s ease-in-out infinite; }
+  #frameGlow.ready{ box-shadow: inset 0 0 0 6px var(--cheese); animation:none; }
+  @keyframes frameWatch{
+    0%,100%{ box-shadow: inset 0 0 0 2px rgba(20,20,26,.2); }
+    50%{ box-shadow: inset 0 0 0 2px rgba(20,20,26,.5); }
+  }
 
   /* ---------- top bar ---------- */
   #topBar{
     position:absolute; top:0; left:0; right:0;
     padding:max(14px, env(safe-area-inset-top)) 14px 10px;
     display:flex; align-items:center; justify-content:space-between; gap:10px;
-    background:linear-gradient(to bottom, rgba(0,0,0,.55), transparent);
+    background:linear-gradient(to bottom, rgba(0,0,0,.45), transparent);
     z-index:20;
   }
   .iconBtn{
     width:42px; height:42px; border-radius:50%;
-    background:rgba(20,20,24,.55); border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.92); border:1.5px solid rgba(20,20,26,.12);
     backdrop-filter:blur(6px);
     display:flex; align-items:center; justify-content:center;
-    color:var(--text); font-size:19px; cursor:pointer; user-select:none;
+    cursor:pointer; user-select:none;
   }
-  .iconBtn:active{ background:rgba(255,255,255,.18); }
+  .iconBtn .icon{ width:20px; height:20px; }
+  .iconBtn:active{ background:#fff; }
   #statusPill{
     flex:1; max-width:62%; margin:0 auto;
-    background:rgba(20,20,24,.6); border:1px solid rgba(255,255,255,.1);
+    background:rgba(255,255,255,.92); border:1.5px solid rgba(20,20,26,.1);
     backdrop-filter:blur(6px);
     border-radius:999px; padding:8px 16px; text-align:center;
     font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  #statusPill b{ color:var(--text); font-weight:600; }
+  #statusPill b{ color:var(--ink); font-weight:600; }
 
   /* ---------- bottom bar ---------- */
   #bottomBar{
     position:absolute; left:0; right:0; bottom:0;
     padding:14px 20px max(22px, env(safe-area-inset-bottom));
     display:flex; align-items:center; justify-content:center;
-    background:linear-gradient(to top, rgba(0,0,0,.6), transparent);
+    background:linear-gradient(to top, rgba(0,0,0,.45), transparent);
     z-index:20;
   }
   #bottomInner{ position:relative; display:flex; align-items:center; justify-content:center; width:100%; max-width:420px;}
   #modeLabel{
     position:absolute; top:-34px; left:0; right:0; text-align:center;
-    font-size:12.5px; color:var(--muted); letter-spacing:.02em;
+    font-size:12.5px; color:#fff; letter-spacing:.02em; text-shadow:0 1px 4px rgba(0,0,0,.5);
   }
   #shutter{
     width:78px; height:78px; border-radius:50%;
     background:radial-gradient(circle at 35% 30%, var(--cheese-light), var(--cheese));
-    border:5px solid rgba(255,255,255,.35);
-    box-shadow:0 4px 18px rgba(0,0,0,.5);
+    border:5px solid rgba(20,20,26,.7);
+    box-shadow:0 4px 18px rgba(0,0,0,.4);
     cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition:transform .12s ease, border-color .2s ease, background .2s ease;
   }
   #shutter:active{ transform:scale(.92); }
   #shutter.armed{ border-color:var(--cheese); animation:pulse 1.4s ease-in-out infinite; }
-  #shutter.listening{ border-color:var(--blue); animation:pulse 1.4s ease-in-out infinite; }
-  #shutter.timing{ border-color:var(--red); }
+  #shutter.listening{ border-color:var(--cheese); animation:pulse 1.4s ease-in-out infinite; }
+  #shutter.timing{ border-color:var(--ink); animation:none; }
   @keyframes pulse{
-    0%,100%{ box-shadow:0 4px 18px rgba(0,0,0,.5), 0 0 0 0 rgba(245,166,35,.5);}
-    50%{ box-shadow:0 4px 18px rgba(0,0,0,.5), 0 0 0 14px rgba(245,166,35,0);}
+    0%,100%{ box-shadow:0 4px 18px rgba(0,0,0,.4), 0 0 0 0 rgba(245,166,35,.55);}
+    50%{ box-shadow:0 4px 18px rgba(0,0,0,.4), 0 0 0 14px rgba(245,166,35,0);}
   }
   #shutterIcon{ width:64px; height:64px; object-fit:contain; display:block; }
+
+  /* start button — same shutter styling, used on the home screen */
+  #startBtn{
+    margin:22px auto 4px; display:flex; flex-direction:column; align-items:center; gap:10px;
+    background:none; border:none; padding:0; cursor:pointer;
+  }
+  #startBtn:disabled{ opacity:.55; }
+  #startShutter{
+    width:88px; height:88px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, var(--cheese-light), var(--cheese));
+    border:5px solid rgba(20,20,26,.7);
+    box-shadow:0 6px 20px rgba(20,20,26,.18);
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .12s ease;
+  }
+  #startBtn:active #startShutter{ transform:scale(.94); }
+  #startShutter img{ width:72px; height:72px; object-fit:contain; display:block; }
+  #startBtn .startLabel{ font-size:13px; font-weight:700; color:var(--ink); letter-spacing:.02em; }
 
   #lastShot{
     position:absolute; left:0; bottom:6px;
     width:46px; height:46px; border-radius:10px; overflow:hidden;
-    border:1.5px solid rgba(255,255,255,.35);
+    border:2px solid var(--cheese);
     background:#111; display:none;
   }
   #lastShot img{ width:100%; height:100%; object-fit:cover; }
@@ -149,24 +178,16 @@
   #flashLayer.flash{ animation:flashAnim .28s ease-out; }
   @keyframes flashAnim{ 0%{opacity:.9;} 100%{opacity:0;} }
 
-  /* ---------- settings sheet ---------- */
-  #settingsBackdrop{
-    position:absolute; inset:0; background:rgba(0,0,0,.55);
-    z-index:40; opacity:0; pointer-events:none; transition:opacity .2s ease;
+  /* ---------- home screen ---------- */
+  #homeScreen{
+    position:absolute; inset:0; z-index:5;
+    background:var(--bg);
+    padding:max(32px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+    overflow-y:auto;
+    display:none;
   }
-  #settingsBackdrop.open{ opacity:1; pointer-events:auto; }
-  #settingsSheet{
-    position:absolute; left:0; right:0; bottom:0; z-index:41;
-    background:var(--panel);
-    border-radius:22px 22px 0 0;
-    border-top:1px solid var(--line);
-    padding:18px 18px max(22px, env(safe-area-inset-bottom));
-    transform:translateY(100%); transition:transform .28s cubic-bezier(.2,.9,.3,1);
-    max-height:82vh; overflow-y:auto;
-  }
-  #settingsSheet.open{ transform:translateY(0); }
-  .sheetHandle{ width:38px; height:4px; border-radius:3px; background:var(--line); margin:0 auto 14px; }
-  .sheetBrand{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  #homeScreen.active{ display:block; }
+  .sheetBrand{ display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:22px; }
   .sheetBrand .logoIcon{ width:112px; height:auto; }
   .sheetTitle{ font-size:13.5px; font-weight:700; margin-bottom:4px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
   .sheetSub{ font-size:12.5px; color:var(--muted); margin-bottom:16px; }
@@ -177,14 +198,14 @@
     border-radius:16px; padding:13px 14px; margin-bottom:10px;
     cursor:pointer; transition:border-color .15s ease, background .15s ease;
   }
-  .modeCard.selected{ border-color:var(--cheese); background:rgba(245,166,35,.1); }
+  .modeCard.selected{ border-color:var(--cheese); background:rgba(245,166,35,.12); }
   .modeIcon{
     width:38px; height:38px; border-radius:10px; flex:0 0 auto;
-    display:flex; align-items:center; justify-content:center; font-size:18px;
-    background:rgba(255,255,255,.06);
+    display:flex; align-items:center; justify-content:center;
+    background:#fff; border:1.5px solid var(--line);
   }
-  .modeCard.selected .modeIcon{ background:var(--cheese); color:var(--ink); }
-  .modeText b{ display:block; font-size:14.5px; margin-bottom:2px; }
+  .modeCard.selected .modeIcon{ background:var(--cheese); border-color:var(--cheese); }
+  .modeText b{ display:block; font-size:14.5px; margin-bottom:2px; color:var(--ink); }
   .modeText span{ font-size:12px; color:var(--muted); }
 
   #timerOpts{ display:flex; gap:8px; margin:2px 0 16px; }
@@ -192,9 +213,9 @@
   .pillBtn{
     flex:1; text-align:center; padding:10px 0; border-radius:12px;
     background:var(--panel-2); border:1.5px solid var(--line);
-    font-size:14px; font-weight:600; cursor:pointer;
+    font-size:14px; font-weight:600; cursor:pointer; color:var(--ink);
   }
-  .pillBtn.selected{ border-color:var(--cheese); color:var(--cheese); background:rgba(245,166,35,.1); }
+  .pillBtn.selected{ border-color:var(--cheese); color:var(--cheese-dark); background:rgba(245,166,35,.12); }
 
   /* ---------- word wheel ---------- */
   #voiceOpts{ margin:2px 0 16px; }
@@ -204,8 +225,8 @@
   .wheelFadeTop, .wheelFadeBottom{
     position:absolute; left:0; right:0; height:44px; z-index:2; pointer-events:none;
   }
-  .wheelFadeTop{ top:0; background:linear-gradient(to bottom, var(--panel), transparent); }
-  .wheelFadeBottom{ bottom:0; background:linear-gradient(to top, var(--panel), transparent); }
+  .wheelFadeTop{ top:0; background:linear-gradient(to bottom, var(--bg), transparent); }
+  .wheelFadeBottom{ bottom:0; background:linear-gradient(to top, var(--bg), transparent); }
   .wheelIndicatorLine{
     position:absolute; left:8px; right:8px; top:50%; height:50px; transform:translateY(-50%);
     border-top:1px solid var(--line); border-bottom:1px solid var(--line);
@@ -225,18 +246,13 @@
     letter-spacing:.03em;
     transition:color .15s ease, font-size .15s ease;
   }
-  .wheelItem.active{ color:var(--cheese); font-size:23px; }
-  #voiceSupportNote{ font-size:11.5px; color:var(--red); margin-top:-8px; margin-bottom:14px; display:none; }
+  .wheelItem.active{ color:var(--cheese-dark); font-size:23px; }
+  #voiceSupportNote{ font-size:11.5px; color:var(--ink); margin-top:-8px; margin-bottom:14px; display:none; }
   #voiceSupportNote.show{ display:block; }
 
   .rowNote{
     display:flex; align-items:flex-start; gap:8px; margin-top:4px;
     font-size:12px; color:var(--muted); line-height:1.5;
-  }
-  #closeSettings{
-    margin-top:14px; width:100%; padding:13px; border-radius:14px;
-    background:var(--cheese); color:var(--ink); font-weight:700; font-size:14.5px;
-    border:none; cursor:pointer;
   }
 
   /* ---------- review screen ---------- */
@@ -251,30 +267,35 @@
   }
   #reviewHeader .brandRow{ display:flex; align-items:center; gap:6px; }
   #reviewHeader .logoIcon{ width:100px; height:auto; }
-  #reviewHeader .subline{ font-size:12px; color:var(--muted); }
+  #reviewHeader .subline{ font-size:12px; color:#9a9aa2; }
   #reviewImgWrap{ flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; padding:6px 0; }
   #reviewImgWrap img{ max-width:100%; max-height:100%; object-fit:contain; border-radius:10px; }
   #thumbRow{ display:flex; gap:8px; padding:0 18px 10px; justify-content:center; }
   .thumbBtn{
     width:56px; height:56px; border-radius:10px; overflow:hidden;
-    border:2px solid var(--line); cursor:pointer; position:relative; background:#111;
+    border:2px solid rgba(255,255,255,.25); cursor:pointer; position:relative; background:#111;
   }
   .thumbBtn.active{ border-color:var(--cheese); }
   .thumbBtn img{ width:100%; height:100%; object-fit:cover; }
   #reviewBar{
     display:flex; gap:10px; padding:12px 18px max(20px, env(safe-area-inset-bottom));
-    background:var(--panel);
+    background:#fff;
   }
   .reviewBtn{
     flex:1; padding:14px; border-radius:14px; text-align:center;
     font-size:14px; font-weight:700; cursor:pointer; border:1.5px solid var(--line);
+    display:flex; align-items:center; justify-content:center; gap:7px;
   }
-  #retakeBtn{ background:var(--panel-2); color:var(--text); }
-  #sendBtn{ background:var(--blue); color:#001a33; border-color:var(--blue); }
+  .reviewBtn .icon{ width:18px; height:18px; }
+  #retakeBtn{ background:#fff; color:var(--ink); border-color:var(--line); }
+  #retakeBtn .icon{ color:var(--cheese); }
+  #sendBtn{ background:var(--ink); color:#fff; border-color:var(--ink); }
+  #sendBtn .icon{ color:var(--cheese); }
   #saveBtn{ background:var(--cheese); color:var(--ink); border-color:var(--cheese); }
+  #saveBtn .icon{ color:var(--ink); }
   #reviewToast{
     position:absolute; left:50%; bottom:110px; transform:translate(-50%,10px);
-    background:rgba(20,20,24,.92); border:1px solid var(--line);
+    background:rgba(255,255,255,.95); border:1px solid var(--line); color:var(--ink);
     padding:10px 16px; border-radius:12px; font-size:12.5px;
     opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; z-index:55;
     max-width:80%; text-align:center;
@@ -284,19 +305,20 @@
   /* ---------- loading / splash ---------- */
   #loadingLayer, #permLayer{
     position:absolute; inset:0; z-index:60; background:var(--bg);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:30px; text-align:center;
+    display:none; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:30px; text-align:center;
   }
-  #permLayer{ display:none; }
+  #loadingLayer.active, #permLayer.active{ display:flex; }
   #loadingLayer .heroLogo{ width:min(72vw,230px); height:auto; margin-bottom:18px; }
   .spinner{
     width:30px; height:30px; border-radius:50%;
-    border:3px solid rgba(255,255,255,.15); border-top-color:var(--cheese);
+    border:3px solid rgba(20,20,26,.12); border-top-color:var(--cheese);
     animation:spin 1s linear infinite; margin-top:6px;
   }
   @keyframes spin{ to{ transform:rotate(360deg); } }
   .loadingText{ font-size:13.5px; color:var(--muted); margin-bottom:20px; }
   .badgeRow{ display:flex; gap:18px; }
-  .badgeIcon{ position:relative; width:50px; height:50px; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .badgeIcon{ position:relative; width:50px; height:50px; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; }
+  .badgeIcon .icon{ width:22px; height:22px; }
   .bc{ position:absolute; width:13px; height:13px; border-color:var(--cheese); border-style:solid; border-width:0; }
   .bc.tl{ top:0; left:0; border-top-width:2.5px; border-left-width:2.5px; border-radius:5px 0 0 0; }
   .bc.tr{ top:0; right:0; border-top-width:2.5px; border-right-width:2.5px; border-radius:0 5px 0 0; }
@@ -304,12 +326,13 @@
   .bc.br{ bottom:0; right:0; border-bottom-width:2.5px; border-right-width:2.5px; border-radius:0 0 5px 0; }
   .badgeLabel{ font-size:9px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; line-height:1.4; max-width:66px; }
 
-  .permTitle{ font-size:17px; font-weight:700; }
+  .permTitle{ font-size:17px; font-weight:700; color:var(--ink); }
   .permText{ font-size:13.5px; color:var(--muted); max-width:280px; line-height:1.6; }
   .retryBtn{
     padding:12px 26px; border-radius:14px; background:var(--cheese); color:var(--ink);
     font-weight:700; font-size:14px; border:none; cursor:pointer; margin-top:8px;
   }
+
 </style>
 </head>
 <body>
@@ -321,6 +344,7 @@
 
 <div id="app">
 
+  <div id="cameraScreen">
   <div id="camWrap">
     <video id="video" playsinline muted autoplay></video>
     <div id="frameGlow"></div>
@@ -331,9 +355,9 @@
   </div>
 
   <div id="topBar">
-    <div class="iconBtn" id="settingsBtn">⚙️</div>
+    <div class="iconBtn" id="backBtn"><span class="icon"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1h4v-6h3v6h4a1 1 0 0 0 1-1v-9"/></svg></span></div>
     <div id="statusPill">Starting camera…</div>
-    <div class="iconBtn" id="flipBtn">🔄</div>
+    <div class="iconBtn" id="flipBtn"><span class="icon"><svg viewBox="0 0 24 24"><path d="M17 3v4h-4"/><path d="M17 7a7 7 0 0 0-12 3.5"/><path d="M7 21v-4h4"/><path d="M7 17a7 7 0 0 0 12-3.5"/></svg></span></div>
   </div>
 
   <div id="cheeseLayer">
@@ -351,11 +375,10 @@
       </div>
     </div>
   </div>
+  </div>
 
-  <!-- settings -->
-  <div id="settingsBackdrop"></div>
-  <div id="settingsSheet">
-    <div class="sheetHandle"></div>
+  <!-- home screen -->
+  <div id="homeScreen" class="active">
     <div class="sheetBrand">
       <span class="logoSlot"></span>
     </div>
@@ -363,26 +386,26 @@
     <div class="sheetSub">Choose how the camera knows when to take the photo — works for solo shots too</div>
 
     <div class="modeCard" data-mode="face">
-      <div class="modeIcon">🙂</div>
-      <div class="modeText"><b>Face Mode (default)</b><span>Fires automatically once everyone is fully in frame — no half heads, no turned heads</span></div>
+      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M8.5 15c1 1 2 1.5 3.5 1.5s2.5-.5 3.5-1.5"/></svg></span></div>
+      <div class="modeText"><b>Face Mode</b><span>Fires automatically once everyone is fully in frame — no half heads, no turned heads</span></div>
     </div>
     <div class="modeCard" data-mode="smile">
-      <div class="modeIcon">😄</div>
-      <div class="modeText"><b>Smile Mode</b><span>Fires automatically only once everyone is framed well and smiling</span></div>
+      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M7.5 14.5c1.2 1.8 3 2.8 4.5 2.8s3.3-1 4.5-2.8"/></svg></span></div>
+      <div class="modeText"><b>Smile Mode (default)</b><span>Fires automatically only once everyone is framed well and smiling</span></div>
     </div>
     <div class="modeCard" data-mode="voice">
-      <div class="modeIcon">🎤</div>
+      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg></span></div>
       <div class="modeText"><b>Voice Mode</b><span>Listens, and fires when it hears everyone say the magic word</span></div>
     </div>
     <div class="modeCard" data-mode="timer">
-      <div class="modeIcon">⏱️</div>
+      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg></span></div>
       <div class="modeText"><b>Timer</b><span>Tap the shutter and it counts down a fixed time</span></div>
     </div>
 
     <div id="timerOpts" class="hidden">
+      <div class="pillBtn" data-sec="5">5s</div>
       <div class="pillBtn" data-sec="10">10s</div>
       <div class="pillBtn" data-sec="15">15s</div>
-      <div class="pillBtn" data-sec="20">20s</div>
     </div>
 
     <div id="voiceOpts" class="hidden">
@@ -403,8 +426,11 @@
       <div id="voiceSupportNote">Voice recognition isn't supported in this browser — try Chrome.</div>
     </div>
 
-    <div class="rowNote">💡 In every mode — if closed eyes are detected right as it's about to shoot, cheeeese waits a beat before firing anyway. Every shot fires as a quick 3-photo burst.</div>
-    <button id="closeSettings">Done</button>
+    <div class="rowNote">In every mode — if closed eyes are detected right as it's about to shoot, cheeeese waits a beat before firing anyway. Every shot fires as a quick 3-photo burst.</div>
+    <button id="startBtn">
+      <span id="startShutter"><img src="data:image/png;base64,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" alt=""></span>
+      <span class="startLabel">Start Camera</span>
+    </button>
   </div>
 
   <!-- review -->
@@ -419,9 +445,9 @@
     <div id="thumbRow"></div>
     <div id="reviewToast"></div>
     <div id="reviewBar">
-      <div class="reviewBtn" id="retakeBtn">🔄 Retake</div>
-      <div class="reviewBtn" id="sendBtn">📤 Send</div>
-      <div class="reviewBtn" id="saveBtn">⬇️ Save</div>
+      <div class="reviewBtn" id="retakeBtn"><span class="icon"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></span>Retake</div>
+      <div class="reviewBtn" id="sendBtn"><span class="icon"><svg viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg></span>Send</div>
+      <div class="reviewBtn" id="saveBtn"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></span>Save</div>
     </div>
   </div>
 
@@ -432,19 +458,19 @@
     <div class="loadingText" id="loadingText">Loading face detection…</div>
     <div class="badgeRow">
       <div class="badge">
-        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span>🙂</div>
+        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M7.5 14.5c1.2 1.8 3 2.8 4.5 2.8s3.3-1 4.5-2.8"/></svg></span></div>
         <div class="badgeLabel">Smile<br>Detection</div>
       </div>
       <div class="badge">
-        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span>👁️</div>
+        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span><span class="icon"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
         <div class="badgeLabel">Eyes Open<br>Detection</div>
       </div>
       <div class="badge">
-        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span>👥</div>
+        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span><span class="icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M10 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></span></div>
         <div class="badgeLabel">Everyone<br>In Frame</div>
       </div>
       <div class="badge">
-        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span>📸</div>
+        <div class="badgeIcon"><span class="bc tl"></span><span class="bc tr"></span><span class="bc bl"></span><span class="bc br"></span><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7 10 4h4l2 3"/><circle cx="12" cy="13.5" r="3.5"/></svg></span></div>
         <div class="badgeLabel">Perfect Shot<br>Automatically</div>
       </div>
     </div>
@@ -481,11 +507,11 @@ const cheeseLayer = document.getElementById('cheeseLayer');
 const countdownNum = document.getElementById('countdownNum');
 const cheeseText = document.getElementById('cheeseText');
 const flashLayer = document.getElementById('flashLayer');
-const settingsBtn = document.getElementById('settingsBtn');
+const backBtn = document.getElementById('backBtn');
 const flipBtn = document.getElementById('flipBtn');
-const settingsBackdrop = document.getElementById('settingsBackdrop');
-const settingsSheet = document.getElementById('settingsSheet');
-const closeSettings = document.getElementById('closeSettings');
+const homeScreen = document.getElementById('homeScreen');
+const cameraScreen = document.getElementById('cameraScreen');
+const startBtn = document.getElementById('startBtn');
 const timerOpts = document.getElementById('timerOpts');
 const voiceOpts = document.getElementById('voiceOpts');
 const wheelTrack = document.getElementById('wheelTrack');
@@ -509,8 +535,12 @@ const WHEEL_ITEM_H = 50;
 const words = ['CHEESE','WHISKEY','SEXY','KAKI'];
 
 // ---------- state ----------
+let cameraActive = false;
+let modelReady = false;
+let modelLoadingPromise = null;
+
 let state = {
-  mode: 'face',
+  mode: 'smile',
   timerSec: 10,
   voiceWord: 'CHEESE',
   facing: 'environment',
@@ -661,12 +691,30 @@ async function startCamera(){
   await new Promise(res=>{ video.onloadedmetadata = ()=>{ video.play(); res(); }; });
 }
 
-async function boot(){
-  loadingLayer.style.display = 'flex';
+// model download can happen quietly in the background while the person is
+// still on the home screen picking a mode — no camera/mic permission needed for this
+function ensureModelLoading(){
+  if(!modelLoadingPromise){
+    modelLoadingPromise = initModel().then(()=>{ modelReady = true; });
+  }
+  return modelLoadingPromise;
+}
+
+async function enterCamera(){
+  startBtn.disabled = true;
   permLayer.style.display = 'none';
+  if(!modelReady){
+    loadingLayer.style.display = 'flex';
+    loadingText.textContent = 'Getting ready…';
+  }
   try{
-    if(!faceLandmarker) await initModel();
+    if(!modelReady) await ensureModelLoading();
+    loadingText.textContent = 'Opening camera…';
+    loadingLayer.style.display = 'flex';
     await startCamera();
+    homeScreen.classList.remove('active');
+    cameraScreen.classList.add('active');
+    cameraActive = true;
     resetCentering();
     loadingLayer.style.display = 'none';
     statusPill.innerHTML = '<b>Ready</b> · looking for faces…';
@@ -676,8 +724,21 @@ async function boot(){
     loadingLayer.style.display = 'none';
     permLayer.style.display = 'flex';
   }
+  startBtn.disabled = false;
 }
-retryPerm.addEventListener('click', boot);
+
+function exitToHome(){
+  cameraActive = false;
+  pauseLoop();
+  stopVoiceListening();
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+  cameraScreen.classList.remove('active');
+  homeScreen.classList.add('active');
+}
+
+startBtn.addEventListener('click', enterCamera);
+backBtn.addEventListener('click', exitToHome);
+retryPerm.addEventListener('click', enterCamera);
 
 // ---------- word wheel ----------
 function buildWheelIndex(){
@@ -722,7 +783,9 @@ document.querySelectorAll('.modeCard').forEach(c=>{
   c.addEventListener('click', ()=>{
     state.mode = c.dataset.mode;
     renderSettingsUI();
-    resetWatch();
+    // only re-arm live if the camera is already running — picking a mode on
+    // the home screen should never itself request camera/mic access
+    if(cameraActive) resetWatch();
   });
 });
 document.querySelectorAll('.pillBtn').forEach(p=>{
@@ -731,16 +794,6 @@ document.querySelectorAll('.pillBtn').forEach(p=>{
     renderSettingsUI();
   });
 });
-settingsBtn.addEventListener('click', ()=>{
-  settingsBackdrop.classList.add('open');
-  settingsSheet.classList.add('open');
-});
-function hideSettings(){
-  settingsBackdrop.classList.remove('open');
-  settingsSheet.classList.remove('open');
-}
-closeSettings.addEventListener('click', hideSettings);
-settingsBackdrop.addEventListener('click', hideSettings);
 
 flipBtn.addEventListener('click', async ()=>{
   state.facing = state.facing === 'environment' ? 'user' : 'environment';
@@ -1050,8 +1103,10 @@ sendBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- go ----------
+// home screen is shown by default (see markup); just get the model warming
+// up quietly in the background so Start feels instant when tapped
 renderSettingsUI();
-boot();
+ensureModelLoading();
 </script>
 </body>
 </html>
