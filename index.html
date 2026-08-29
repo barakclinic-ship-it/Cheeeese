@@ -383,23 +383,23 @@
       <span class="logoSlot"></span>
     </div>
     <div class="sheetTitle">Shooting Mode</div>
-    <div class="sheetSub">Choose how the camera knows when to take the photo — works for solo shots too</div>
+    <div class="sheetSub">Choose how the camera knows when to take the photo — combine Face, Smile &amp; Voice however you like, or use Timer on its own</div>
 
+    <div class="modeCard" data-mode="timer">
+      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg></span></div>
+      <div class="modeText"><b>Timer</b><span>Tap the shutter and it counts down a fixed time</span></div>
+    </div>
     <div class="modeCard" data-mode="face">
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M8.5 15c1 1 2 1.5 3.5 1.5s2.5-.5 3.5-1.5"/></svg></span></div>
       <div class="modeText"><b>Face Mode</b><span>Fires automatically once everyone is fully in frame — no half heads, no turned heads</span></div>
     </div>
     <div class="modeCard" data-mode="smile">
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M7.5 14.5c1.2 1.8 3 2.8 4.5 2.8s3.3-1 4.5-2.8"/></svg></span></div>
-      <div class="modeText"><b>Smile Mode (default)</b><span>Fires automatically only once everyone is framed well and smiling</span></div>
+      <div class="modeText"><b>Smile Mode</b><span>Fires automatically only once everyone is framed well and smiling</span></div>
     </div>
     <div class="modeCard" data-mode="voice">
       <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg></span></div>
       <div class="modeText"><b>Voice Mode</b><span>Listens, and fires when it hears everyone say the magic word</span></div>
-    </div>
-    <div class="modeCard" data-mode="timer">
-      <div class="modeIcon"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg></span></div>
-      <div class="modeText"><b>Timer</b><span>Tap the shutter and it counts down a fixed time</span></div>
     </div>
 
     <div id="timerOpts" class="hidden">
@@ -530,7 +530,12 @@ const loadingText = document.getElementById('loadingText');
 const permLayer = document.getElementById('permLayer');
 const retryPerm = document.getElementById('retryPerm');
 
-const modeNames = { face:'Face Mode', smile:'Smile Mode', voice:'Voice Mode', timer:'Timer' };
+const modeShortNames = { face:'Face', smile:'Smile', voice:'Voice' };
+function buildModeLabel(){
+  if(state.modes.has('timer')) return 'Timer';
+  const names = [...state.modes].map(m => modeShortNames[m]);
+  return names.length ? names.join(' + ') : 'Smile';
+}
 const WHEEL_ITEM_H = 50;
 const words = ['CHEESE','WHISKEY','SEXY','KAKI'];
 
@@ -540,13 +545,16 @@ let modelReady = false;
 let modelLoadingPromise = null;
 
 let state = {
-  mode: 'smile',
+  modes: new Set(['smile']), // face / smile / voice can combine; timer is exclusive
   timerSec: 10,
   voiceWord: 'CHEESE',
   facing: 'environment',
   busy: false,          // capturing / showing say-cheese, ignore new triggers
   timing: false,
 };
+let voiceHeard = false;
+let voiceHeardTimer = null;
+const VOICE_HEARD_WINDOW_MS = 4000; // how long a heard word stays "valid" while other gates (framing/smile) catch up
 
 let faceLandmarker = null;
 let stream = null;
@@ -620,11 +628,11 @@ if(SpeechRecognitionImpl){
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.onresult = (event)=>{
-    if(state.busy || state.mode !== 'voice') return;
+    if(state.busy || !state.modes.has('voice')) return;
     for(let i = event.resultIndex; i < event.results.length; i++){
       const transcript = event.results[i][0].transcript.toLowerCase();
       if(transcript.includes(state.voiceWord.toLowerCase())){
-        handleVoiceTrigger();
+        markVoiceHeard();
         break;
       }
     }
@@ -635,7 +643,7 @@ if(SpeechRecognitionImpl){
     }
   };
   recognition.onend = ()=>{
-    if(voiceListening && state.mode === 'voice' && !state.busy){
+    if(voiceListening && state.modes.has('voice') && !state.busy){
       try{ recognition.start(); }catch(e){ /* already starting */ }
     }
   };
@@ -653,12 +661,13 @@ function stopVoiceListening(){
   voiceListening = false;
   if(recognition){ try{ recognition.stop(); }catch(e){} }
 }
-function handleVoiceTrigger(){
-  if(state.busy) return;
-  state.busy = true;
-  stopVoiceListening();
-  shutter.classList.remove('listening');
-  runCaptureSequence(state.voiceWord + '!', { waitCheese:true });
+// the word was heard — this alone fires the shot if voice is the only active
+// mode, or just satisfies the "voice" gate if combined with face/smile,
+// which the main analyzeFrame loop checks each frame
+function markVoiceHeard(){
+  voiceHeard = true;
+  clearTimeout(voiceHeardTimer);
+  voiceHeardTimer = setTimeout(()=>{ voiceHeard = false; }, VOICE_HEARD_WINDOW_MS);
 }
 
 // ---------- init ----------
@@ -770,23 +779,35 @@ setTimeout(()=>{ wheelTrack.scrollTop = 0; setActiveWheelItem(0); }, 0);
 // ---------- mode / settings UI ----------
 function renderSettingsUI(){
   document.querySelectorAll('.modeCard').forEach(c=>{
-    c.classList.toggle('selected', c.dataset.mode === state.mode);
+    c.classList.toggle('selected', state.modes.has(c.dataset.mode));
   });
-  timerOpts.classList.toggle('hidden', state.mode !== 'timer');
-  voiceOpts.classList.toggle('hidden', state.mode !== 'voice');
+  timerOpts.classList.toggle('hidden', !state.modes.has('timer'));
+  voiceOpts.classList.toggle('hidden', !state.modes.has('voice'));
   document.querySelectorAll('.pillBtn').forEach(p=>{
     p.classList.toggle('selected', Number(p.dataset.sec) === state.timerSec);
   });
-  modeLabel.textContent = modeNames[state.mode];
+  modeLabel.textContent = buildModeLabel();
+}
+// timer is exclusive (a fixed countdown is a different kind of trigger);
+// face / smile / voice can be combined freely — toggling one on/off never
+// leaves zero modes active
+function toggleMode(name){
+  if(name === 'timer'){
+    state.modes = new Set(['timer']);
+  } else if(state.modes.has('timer')){
+    state.modes = new Set([name]);
+  } else if(state.modes.has(name)){
+    if(state.modes.size > 1) state.modes.delete(name);
+  } else {
+    state.modes.add(name);
+  }
+  renderSettingsUI();
+  // only re-arm live if the camera is already running — picking a mode on
+  // the home screen should never itself request camera/mic access
+  if(cameraActive) resetWatch();
 }
 document.querySelectorAll('.modeCard').forEach(c=>{
-  c.addEventListener('click', ()=>{
-    state.mode = c.dataset.mode;
-    renderSettingsUI();
-    // only re-arm live if the camera is already running — picking a mode on
-    // the home screen should never itself request camera/mic access
-    if(cameraActive) resetWatch();
-  });
+  c.addEventListener('click', ()=> toggleMode(c.dataset.mode));
 });
 document.querySelectorAll('.pillBtn').forEach(p=>{
   p.addEventListener('click', ()=>{
@@ -811,21 +832,20 @@ function armLoop(){
   stopVoiceListening();
   cancelAnimationFrame(rafId);
   shutter.classList.remove('armed','listening','timing');
+  voiceHeard = false;
+  clearTimeout(voiceHeardTimer);
 
-  if(state.mode === 'timer'){
+  if(state.modes.has('timer')){
     frameGlow.className = '';
     statusPill.innerHTML = '<b>Timer</b> · tap the shutter to start';
-  } else if(state.mode === 'voice'){
-    frameGlow.className = 'listening';
-    shutter.classList.add('listening');
-    startVoiceListening();
   } else {
-    frameGlow.className = 'watching';
-    shutter.classList.add('armed');
+    frameGlow.className = state.modes.has('voice') ? 'listening' : 'watching';
+    shutter.classList.add(state.modes.has('voice') ? 'listening' : 'armed');
+    if(state.modes.has('voice')) startVoiceListening();
   }
 
   // this loop always runs (in every mode) so the frame can auto-center on
-  // whoever's in view; face/smile modes additionally use it to gate the shot
+  // whoever's in view; face/smile/voice combos additionally use it to gate the shot
   const loop = ()=>{
     if(!state.busy && faceLandmarker && video.readyState >= 2){
       analyzeFrame();
@@ -852,14 +872,20 @@ function analyzeFrame(){
 
   updateCentering(landmarksSet);
 
-  // voice & timer modes only need the loop for auto-centering — they fire
-  // via speech recognition / the countdown, not via this trigger logic
-  if(state.mode !== 'face' && state.mode !== 'smile') return;
+  // timer only needs the loop for auto-centering — it fires off the countdown, not this gate
+  if(state.modes.has('timer')) return;
+
+  const needFace = state.modes.has('face');
+  const needSmile = state.modes.has('smile');
+  const needVoice = state.modes.has('voice');
+  const needFraming = needFace || needSmile; // smiling well only matters if they're actually in frame
 
   if(numFaces === 0){
     conditionMetSince = null;
-    frameGlow.className = 'watching';
-    statusPill.innerHTML = '<b>0 faces</b> · nobody in frame yet';
+    frameGlow.className = state.modes.has('voice') ? 'listening' : 'watching';
+    statusPill.innerHTML = needVoice && !needFraming
+      ? `<b>🎤 Listening</b> · say "${state.voiceWord}"`
+      : '<b>0 faces</b> · nobody in frame yet';
     return;
   }
 
@@ -892,20 +918,21 @@ function analyzeFrame(){
     if(smile < 0.45) allSmiling = false;
   });
 
-  const facesOk = allFramed && allFrontal;
-  const needSmile = state.mode === 'smile';
-  const groupOk = numFaces >= 1 && facesOk && (!needSmile || allSmiling);
-  const conditionOk = groupOk && allEyesOpen;
+  const facesOk = !needFraming || (allFramed && allFrontal);
+  const smileOk = !needSmile || allSmiling;
+  const voiceOk = !needVoice || voiceHeard;
+  const conditionOk = numFaces >= 1 && facesOk && smileOk && voiceOk && allEyesOpen;
 
   let msg = `<b>${numFaces} face${numFaces===1?'':'s'}</b> · `;
-  if(!allFramed) msg += 'someone is half out of frame';
-  else if(!allFrontal) msg += 'a head is turned away';
+  if(needFraming && !allFramed) msg += 'someone is half out of frame';
+  else if(needFraming && !allFrontal) msg += 'a head is turned away';
   else if(needSmile && !allSmiling) msg += 'waiting for everyone to smile';
+  else if(needVoice && !voiceHeard) msg += `say "${state.voiceWord}"`;
   else if(!allEyesOpen) msg += 'closed eyes…';
   else msg += 'perfect! shooting…';
   statusPill.innerHTML = msg;
 
-  frameGlow.className = conditionOk ? 'ready' : 'watching';
+  frameGlow.className = conditionOk ? 'ready' : (needVoice ? 'listening' : 'watching');
 
   if(conditionOk){
     if(conditionMetSince === null) conditionMetSince = performance.now();
@@ -923,7 +950,7 @@ function analyzeFrame(){
 // ---------- shutter ----------
 shutter.addEventListener('click', ()=>{
   if(state.busy) return;
-  if(state.mode === 'timer'){
+  if(state.modes.has('timer')){
     startTimerCountdown();
   } else {
     state.busy = true;
