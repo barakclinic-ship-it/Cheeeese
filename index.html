@@ -4,6 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>cheeeese</title>
+
+<!-- home-screen / browser icon -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<meta name="theme-color" content="#F5A623">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="cheeeese">
+<meta name="mobile-web-app-capable" content="yes">
+
+<!-- link preview (WhatsApp, iMessage, etc.) -->
+<meta name="description" content="The smartest group selfie — smart auto-capture with Face, Smile, Voice and Timer modes.">
+<meta property="og:title" content="cheeeese">
+<meta property="og:description" content="The smartest group selfie.">
+<meta property="og:image" content="icon-512.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="icon-512.png">
+
 <style>
   :root{
     --bg:#ffffff;
@@ -974,7 +993,10 @@ function analyzeFrame(){
       conditionMetSince = null;
       state.busy = true;
       pauseLoop();
-      runCaptureSequence('SAY CHEESE', { waitCheese:true });
+      // auto-detect (face/smile/voice) should catch the moment the instant
+      // conditions are met — no "SAY CHEESE" flash/delay, that's for the
+      // manual tap and timer countdown, where a pause is expected
+      eyeGateThenBurst();
     }
   } else {
     conditionMetSince = null;
