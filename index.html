@@ -1108,7 +1108,7 @@ function analyzeFrame(){
 
   const EDGE_MARGIN = 0.02;
   const NOSE_CENTER_TOL = 0.16;
-  let allFramed = true, allFrontal = true, allEyesOpen = true, allSmiling = true;
+  const framedArr = [], frontalArr = [], eyesOpenArr = [], smilingArr = [];
 
   landmarksSet.forEach((lm)=>{
     let minX=1,maxX=0,minY=1,maxY=0;
@@ -1116,13 +1116,11 @@ function analyzeFrame(){
       if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
       if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
     });
-    if(minX < EDGE_MARGIN || maxX > 1-EDGE_MARGIN || minY < EDGE_MARGIN || maxY > 1-EDGE_MARGIN){
-      allFramed = false;
-    }
+    framedArr.push(!(minX < EDGE_MARGIN || maxX > 1-EDGE_MARGIN || minY < EDGE_MARGIN || maxY > 1-EDGE_MARGIN));
     const nose = lm[1], rightEdge = lm[234], leftEdge = lm[454];
     const faceWidth = Math.abs(leftEdge.x - rightEdge.x) || 1;
     const ratio = (nose.x - Math.min(leftEdge.x,rightEdge.x)) / faceWidth;
-    if(Math.abs(ratio - 0.5) > NOSE_CENTER_TOL) allFrontal = false;
+    frontalArr.push(Math.abs(ratio - 0.5) <= NOSE_CENTER_TOL);
   });
 
   blendshapesSet.forEach(bs=>{
@@ -1130,9 +1128,26 @@ function analyzeFrame(){
     const get = name => (cats.find(c=>c.categoryName===name)?.score) || 0;
     const blink = (get('eyeBlinkLeft') + get('eyeBlinkRight')) / 2;
     const smile = (get('mouthSmileLeft') + get('mouthSmileRight')) / 2;
-    if(blink > 0.5) allEyesOpen = false;
-    if(smile < 0.45) allSmiling = false;
+    eyesOpenArr.push(blink <= 0.5);
+    smilingArr.push(smile >= 0.45);
   });
+
+  // requiring literally 100% of a big group to be perfectly framed/smiling/
+  // eyes-open in the exact same instant gets statistically brutal as the
+  // group grows — with 20 people, the odds nobody blinks or glances away at
+  // that exact frame are slim, so it could just never fire even though
+  // detection itself is working fine. Small groups still need everyone;
+  // bigger ones only need most people to be there.
+  function mostTrue(arr, minFraction){
+    if(arr.length === 0) return true;
+    const trueCount = arr.filter(Boolean).length;
+    return trueCount / arr.length >= minFraction;
+  }
+  const REQUIRED_FRACTION = numFaces <= 4 ? 1.0 : 0.82;
+  const allFramed = mostTrue(framedArr, REQUIRED_FRACTION);
+  const allFrontal = mostTrue(frontalArr, REQUIRED_FRACTION);
+  const allSmiling = mostTrue(smilingArr, REQUIRED_FRACTION);
+  const allEyesOpen = mostTrue(eyesOpenArr, REQUIRED_FRACTION);
 
   // saying the magic word always wins outright — like a normal camera with
   // voice control bolted on. It fires with or without a face in view (so it
@@ -1253,11 +1268,13 @@ async function eyesCurrentlyOpen(){
   const result = faceLandmarker.detectForVideo(video, performance.now());
   const blendshapesSet = result.faceBlendshapes || [];
   if(blendshapesSet.length === 0) return true;
-  return blendshapesSet.every(bs=>{
+  const openFlags = blendshapesSet.map(bs=>{
     const cats = bs.categories || [];
     const get = name => (cats.find(c=>c.categoryName===name)?.score) || 0;
     return ((get('eyeBlinkLeft') + get('eyeBlinkRight')) / 2) <= 0.5;
   });
+  const requiredFraction = openFlags.length <= 4 ? 1.0 : 0.82;
+  return (openFlags.filter(Boolean).length / openFlags.length) >= requiredFraction;
 }
 
 // ---------- burst capture (3 rapid shots) ----------
