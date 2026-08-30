@@ -602,6 +602,8 @@ const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRec
 let recognition = null;
 let voiceListening = false;
 let voiceRestartTimer = null;
+let voiceSessionStart = 0;
+let voiceBackoff = 450;
 let lastHeardText = '';
 // browsers often mis-transcribe these — accept close variants too
 const VOICE_ALTERNATES = {
@@ -648,12 +650,17 @@ if(SpeechRecognitionImpl){
     if(!(voiceListening && state.modes.has('voice') && !state.busy)) return;
     // most browsers end the session after every short pause even in
     // "continuous" mode — restarting instantly can spin into a tight
-    // start/stop loop (audible clicks, dropped words), so give it a beat
+    // start/stop loop, which is audible (mic chime) and annoying. if it just
+    // keeps ending almost immediately, back off more each time instead of
+    // hammering it; a session that actually ran for a while resets this.
+    const ranFor = Date.now() - voiceSessionStart;
+    voiceBackoff = ranFor < 1200 ? Math.min(voiceBackoff * 1.6, 4000) : 450;
     voiceRestartTimer = setTimeout(()=>{
       if(voiceListening && state.modes.has('voice') && !state.busy){
+        voiceSessionStart = Date.now();
         try{ recognition.start(); }catch(e){ /* already starting */ }
       }
-    }, 450);
+    }, voiceBackoff);
   };
 } else {
   voiceSupportNote.classList.add('show');
@@ -662,6 +669,8 @@ if(SpeechRecognitionImpl){
 function startVoiceListening(){
   if(!recognition) { statusPill.innerHTML = '<b>Voice Mode</b> · not supported in this browser'; return; }
   voiceListening = true;
+  voiceSessionStart = Date.now();
+  voiceBackoff = 450;
   try{ recognition.start(); }catch(e){ /* already running */ }
   statusPill.innerHTML = `<b>🎤 Listening</b> · say "${state.voiceWord}"`;
 }
@@ -744,9 +753,44 @@ function endLoading(){
   loadingLayer.style.display = 'none';
 }
 
+// ---------- shutter sound (synthesized — no audio file needed) ----------
+let audioCtx = null;
+function ensureAudioCtx(){
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; }
+  }
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playShutterSound(){
+  const ctx = audioCtx;
+  if(!ctx) return;
+  const now = ctx.currentTime;
+  const dur = 0.05;
+  const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i = 0; i < data.length; i++){
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 2200;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.14, now); // deliberately quiet — just a soft reflex click
+  gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + dur + 0.01);
+}
+
 async function enterCamera(){
   startBtn.disabled = true;
   permLayer.style.display = 'none';
+  ensureAudioCtx(); // must happen inside this click handler for autoplay policy
   beginLoading(modelReady ? 'Opening camera…' : 'Getting ready…');
 
   // model download and camera permission are two independent things that can
@@ -942,18 +986,8 @@ function analyzeFrame(){
   const needVoice = state.modes.has('voice');
   const needFraming = needFace || needSmile; // smiling well only matters if they're actually in frame
 
-  if(numFaces === 0){
-    conditionMetSince = null;
-    frameGlow.className = state.modes.has('voice') ? 'listening' : 'watching';
-    statusPill.innerHTML = needVoice && !needFraming
-      ? `<b>🎤 Listening</b> · say "${state.voiceWord}"`
-      : '<b>0 faces</b> · nobody in frame yet';
-    return;
-  }
-
   const EDGE_MARGIN = 0.02;
   const NOSE_CENTER_TOL = 0.16;
-
   let allFramed = true, allFrontal = true, allEyesOpen = true, allSmiling = true;
 
   landmarksSet.forEach((lm)=>{
@@ -980,24 +1014,28 @@ function analyzeFrame(){
     if(smile < 0.45) allSmiling = false;
   });
 
-  const facesOk = !needFraming || (allFramed && allFrontal);
-  const smileOk = !needSmile || allSmiling;
-  // when Face/Smile is combined with Voice, the visual check is what actually
-  // decides the shot — voice keeps listening on top of it, but never blocks
-  // the shot, since speech recognition can be unreliable. voice only gates
-  // the shot when it's the sole active mode (no face/smile alongside it).
-  const voiceGates = needVoice && !needFraming;
-  const voiceOk = !voiceGates || voiceHeard;
-  const conditionOk = numFaces >= 1 && facesOk && smileOk && voiceOk && allEyesOpen;
+  // saying the magic word always wins outright — like a normal camera with
+  // voice control bolted on. It fires with or without a face in view (so it
+  // works for non-selfie shots too), and even when Face/Smile is also
+  // selected it doesn't wait on framing/smiling — voice is a deliberate,
+  // one-shot signal, not a continuous check.
+  const voiceWins = needVoice && voiceHeard;
+  const visualOk = needFraming && numFaces >= 1
+    && (!needFace || (allFramed && allFrontal))
+    && (!needSmile || allSmiling);
+  const conditionOk = (voiceWins || visualOk) && allEyesOpen;
 
-  let msg = `<b>${numFaces} face${numFaces===1?'':'s'}</b> · `;
-  if(needFraming && !allFramed) msg += 'someone is half out of frame';
-  else if(needFraming && !allFrontal) msg += 'a head is turned away';
-  else if(needSmile && !allSmiling) msg += 'waiting for everyone to smile';
-  else if(voiceGates && !voiceHeard) msg += `say "${state.voiceWord}"` + (lastHeardText ? ` · heard "${lastHeardText}"` : '');
-  else if(!allEyesOpen) msg += 'closed eyes…';
-  else msg += 'perfect! shooting…';
-  statusPill.innerHTML = msg;
+  let msg;
+  if(voiceWins) msg = `heard "${state.voiceWord}"!`;
+  else if(needFraming && numFaces === 0) msg = needVoice ? `nobody in frame — say "${state.voiceWord}" anytime` : 'nobody in frame yet';
+  else if(needFace && !allFramed) msg = 'someone is half out of frame';
+  else if(needFace && !allFrontal) msg = 'a head is turned away';
+  else if(needSmile && !allSmiling) msg = 'waiting for everyone to smile';
+  else if(needVoice && !needFraming) msg = `say "${state.voiceWord}"` + (lastHeardText ? ` · heard "${lastHeardText}"` : '');
+  else if(!allEyesOpen) msg = 'closed eyes…';
+  else msg = 'perfect! shooting…';
+  if(needVoice && needFraming && !voiceWins && numFaces > 0) msg += ` · or say "${state.voiceWord}"`;
+  statusPill.innerHTML = numFaces > 0 ? `<b>${numFaces} face${numFaces===1?'':'s'}</b> · ${msg}` : `<b>${msg}</b>`;
 
   frameGlow.className = conditionOk ? 'ready' : (needVoice ? 'listening' : 'watching');
 
@@ -1005,7 +1043,7 @@ function analyzeFrame(){
     if(conditionMetSince === null) conditionMetSince = performance.now();
     // hearing the word is already a deliberate, discrete signal — it doesn't
     // need the same anti-flicker debounce a continuous visual check does
-    const debounce = voiceGates ? 120 : DEBOUNCE_MS;
+    const debounce = voiceWins ? 120 : DEBOUNCE_MS;
     if(performance.now() - conditionMetSince >= debounce){
       conditionMetSince = null;
       state.busy = true;
@@ -1108,6 +1146,7 @@ async function burstCapture(){
   for(let i = 0; i < 3; i++){
     capturedPhotos.push(grabFrame());
     flashLayer.classList.remove('flash'); void flashLayer.offsetWidth; flashLayer.classList.add('flash');
+    playShutterSound();
     if(navigator.vibrate) navigator.vibrate(80);
     if(i < 2) await sleep(220);
   }
