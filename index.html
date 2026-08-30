@@ -810,7 +810,7 @@ async function initModel(){
     outputFaceBlendshapes:true,
     outputFacialTransformationMatrixes:false,
     runningMode:"VIDEO",
-    numFaces:8
+    numFaces:30
   });
 }
 
@@ -823,7 +823,9 @@ async function startCamera(){
   }
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   stream = await navigator.mediaDevices.getUserMedia({
-    video:{ facingMode: state.facing, width:{ideal:1280}, height:{ideal:960} },
+    // higher resolution helps the model pick out smaller/more distant faces
+    // in a big group shot — it's just more raw detail to work with
+    video:{ facingMode: state.facing, width:{ideal:1920}, height:{ideal:1440} },
     audio:false
   });
   video.srcObject = stream;
