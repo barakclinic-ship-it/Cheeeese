@@ -643,6 +643,7 @@ let activeThumb = 0;
 const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let voiceListening = false;
+let voiceRestartTimer = null;
 if(SpeechRecognitionImpl){
   recognition = new SpeechRecognitionImpl();
   recognition.continuous = true;
@@ -660,13 +661,28 @@ if(SpeechRecognitionImpl){
   };
   recognition.onerror = (e)=>{
     if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      voiceListening = false;
       statusPill.innerHTML = '<b>Mic blocked</b> · allow microphone access to use Voice Mode';
+    } else if(e.error === 'audio-capture'){
+      voiceListening = false;
+      statusPill.innerHTML = '<b>No microphone</b> · voice mode needs one';
+    } else if(e.error === 'network'){
+      statusPill.innerHTML = '<b>Voice needs a connection</b> · check your internet';
     }
+    // 'no-speech' / 'aborted' fire constantly during normal silence — harmless,
+    // onend below just restarts listening for them
   };
   recognition.onend = ()=>{
-    if(voiceListening && state.modes.has('voice') && !state.busy){
-      try{ recognition.start(); }catch(e){ /* already starting */ }
-    }
+    clearTimeout(voiceRestartTimer);
+    if(!(voiceListening && state.modes.has('voice') && !state.busy)) return;
+    // most browsers end the session after every short pause even in
+    // "continuous" mode — restarting instantly can spin into a tight
+    // start/stop loop (audible clicks, dropped words), so give it a beat
+    voiceRestartTimer = setTimeout(()=>{
+      if(voiceListening && state.modes.has('voice') && !state.busy){
+        try{ recognition.start(); }catch(e){ /* already starting */ }
+      }
+    }, 250);
   };
 } else {
   voiceSupportNote.classList.add('show');
@@ -680,6 +696,7 @@ function startVoiceListening(){
 }
 function stopVoiceListening(){
   voiceListening = false;
+  clearTimeout(voiceRestartTimer);
   if(recognition){ try{ recognition.stop(); }catch(e){} }
 }
 // the word was heard — this alone fires the shot if voice is the only active
@@ -990,7 +1007,10 @@ function analyzeFrame(){
 
   if(conditionOk){
     if(conditionMetSince === null) conditionMetSince = performance.now();
-    if(performance.now() - conditionMetSince >= DEBOUNCE_MS){
+    // hearing the word is already a deliberate, discrete signal — it doesn't
+    // need the same anti-flicker debounce a continuous visual check does
+    const debounce = needVoice ? 120 : DEBOUNCE_MS;
+    if(performance.now() - conditionMetSince >= debounce){
       conditionMetSince = null;
       state.busy = true;
       pauseLoop();
