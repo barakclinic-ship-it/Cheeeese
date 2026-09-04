@@ -212,6 +212,9 @@
     display:none;
   }
   #homeScreen.active{ display:block; }
+  #shareAppBtn{
+    position:absolute; top:max(14px, env(safe-area-inset-top)); right:14px; z-index:6;
+  }
   .sheetBrand{ display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:22px; }
   .sheetBrand .logoIcon{ width:112px; height:auto; }
   .sheetTitle{ font-size:13.5px; font-weight:700; margin-bottom:4px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
@@ -341,6 +344,15 @@
   }
   #reviewToast.show{ opacity:1; transform:translate(-50%,0); }
 
+  #homeToast{
+    position:fixed; left:50%; bottom:22px; transform:translate(-50%,10px);
+    background:var(--ink); color:#fff;
+    padding:10px 16px; border-radius:12px; font-size:12.5px;
+    opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; z-index:8;
+    max-width:80%; text-align:center;
+  }
+  #homeToast.show{ opacity:1; transform:translate(-50%,0); }
+
   /* ---------- loading / splash ---------- */
   #loadingLayer, #permLayer{
     position:absolute; inset:0; z-index:60; background:var(--bg);
@@ -419,6 +431,7 @@
 
   <!-- home screen -->
   <div id="homeScreen" class="active">
+    <div class="iconBtn" id="shareAppBtn"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6 15.4 6.4M8.6 13.4l6.8 4.2"/></svg></span></div>
     <div class="sheetBrand">
       <span class="logoSlot"></span>
     </div>
@@ -480,6 +493,7 @@
     </button>
     <div class="rowNote" style="justify-content:center; margin-top:26px;">Created by Octopus ©</div>
   </div>
+  <div id="homeToast"></div>
 
   <!-- review -->
   <div id="reviewScreen">
@@ -546,6 +560,8 @@ const flipBtn = document.getElementById('flipBtn');
 const homeScreen = document.getElementById('homeScreen');
 const cameraScreen = document.getElementById('cameraScreen');
 const startBtn = document.getElementById('startBtn');
+const shareAppBtn = document.getElementById('shareAppBtn');
+const homeToast = document.getElementById('homeToast');
 const timerOpts = document.getElementById('timerOpts');
 const voiceOpts = document.getElementById('voiceOpts');
 const wheelTrack = document.getElementById('wheelTrack');
@@ -1032,6 +1048,24 @@ enhanceRow.addEventListener('click', ()=>{
   enhanceSwitch.classList.toggle('on', state.autoEnhance);
 });
 
+shareAppBtn.addEventListener('click', async ()=>{
+  const shareData = {
+    title: 'cheeeese',
+    text: 'cheeeese — the smartest group selfie. Try it:',
+    url: location.href
+  };
+  try{
+    if(navigator.share){
+      await navigator.share(shareData);
+    } else if(navigator.clipboard){
+      await navigator.clipboard.writeText(location.href);
+      homeToast.textContent = 'Link copied!';
+      homeToast.classList.add('show');
+      setTimeout(()=>homeToast.classList.remove('show'), 2000);
+    }
+  }catch(err){ /* user cancelled the share sheet — nothing to do */ }
+});
+
 flipBtn.addEventListener('click', async ()=>{
   state.facing = state.facing === 'environment' ? 'user' : 'environment';
   pauseLoop();
@@ -1107,8 +1141,8 @@ function analyzeFrame(){
   const needVoice = state.modes.has('voice');
   const needFraming = needFace || needSmile; // smiling well only matters if they're actually in frame
 
-  const EDGE_MARGIN = 0.02;
-  const NOSE_CENTER_TOL = 0.16;
+  const EDGE_MARGIN = 0.008;
+  const NOSE_CENTER_TOL = 0.24;
   const framedArr = [], frontalArr = [], eyesOpenArr = [], smilingArr = [];
 
   landmarksSet.forEach((lm)=>{
