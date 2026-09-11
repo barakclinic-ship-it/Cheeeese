@@ -630,29 +630,29 @@ const FACE_COUNT_DECAY = 0.996; // ~3s half-life per frame at 60fps
 // the view never moves or zooms in on its own — the only thing it ever does
 // is switch to showing the camera's full, uncropped frame (letterboxed)
 // if someone looks like they're about to get cut off at the current crop.
-const FRAME_MARGIN = 0.035;
+// no automatic zoom of any kind anymore — pinch is the only way to zoom.
+// object-fit just stays fixed at 'cover' always.
 function resetCentering(){
   video.style.objectFit = 'cover';
-}
-function updateCentering(landmarksSet){
-  if(!landmarksSet || !landmarksSet.length){
-    video.style.objectFit = 'cover';
-    return;
-  }
-  let minX=1,maxX=0,minY=1,maxY=0;
-  landmarksSet.forEach(lm=>{
-    lm.forEach(p=>{
-      if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
-      if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
-    });
-  });
-  const someoneCutOff = minX < FRAME_MARGIN || maxX > 1-FRAME_MARGIN || minY < FRAME_MARGIN || maxY > 1-FRAME_MARGIN;
-  video.style.objectFit = someoneCutOff ? 'contain' : 'cover';
 }
 
 // ---------- pinch-to-zoom (digital, always centered — no panning) ----------
 function applyManualZoom(){
-  video.style.transform = (video.classList.contains('mirror') ? 'scaleX(-1) ' : '') + `scale(${manualZoom.toFixed(3)})`;
+  // face-box overlay must scale exactly together with the video, or the
+  // yellow tracking boxes drift out of alignment with people's actual faces
+  // the moment you pinch-zoom
+  const t = (video.classList.contains('mirror') ? 'scaleX(-1) ' : '') + `scale(${manualZoom.toFixed(3)})`;
+  video.style.transform = t;
+  faceBoxCanvas.style.transform = t;
+}
+// maps a raw full-frame normalized point into the pinch-zoomed crop's own
+// normalized space (the crop is always centered), so framing/edge checks —
+// and what grabFrame() actually captures — agree with what's really on
+// screen once the person has zoomed in, instead of judging against the full,
+// unzoomed sensor frame
+function toZoomedNorm(nx, ny){
+  if(manualZoom <= 1.001) return { x:nx, y:ny };
+  return { x:(nx-0.5)*manualZoom+0.5, y:(ny-0.5)*manualZoom+0.5 };
 }
 let pinchStartDist = null, pinchStartZoom = 1;
 function touchDist(touches){
@@ -797,18 +797,71 @@ if(SpeechRecognitionImpl){
   voiceSupportNote.classList.add('show');
 }
 
+// ---------- loud group-shout detector (a real answer for "everyone shouting
+// the word in chorus at once") — standard speech-to-text is bad at that:
+// overlapping voices from different people, timings and pitches just garble
+// the transcription. A sudden volume spike above the recent ambient noise
+// level is a far more reliable signal for "everyone just shouted together",
+// so it runs alongside word matching, not instead of it.
+let volumeStream = null;
+let volumeAnalyser = null;
+let volumeDataArray = null;
+let volumePollTimer = null;
+let noiseFloor = 0.02;
+let lastVolumeTrigger = 0;
+async function startVolumeWatch(){
+  if(volumeStream) return;
+  const ctx = ensureAudioCtx();
+  if(!ctx) return;
+  try{
+    volumeStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){ return; } // mic unavailable for this — word matching still works on its own
+  const source = ctx.createMediaStreamSource(volumeStream);
+  volumeAnalyser = ctx.createAnalyser();
+  volumeAnalyser.fftSize = 512;
+  source.connect(volumeAnalyser);
+  volumeDataArray = new Uint8Array(volumeAnalyser.fftSize);
+  noiseFloor = 0.02;
+  clearInterval(volumePollTimer);
+  volumePollTimer = setInterval(()=>{
+    if(!(voiceListening && state.modes.has('voice') && !state.busy) || !volumeAnalyser) return;
+    volumeAnalyser.getByteTimeDomainData(volumeDataArray);
+    let sumSquares = 0;
+    for(let i = 0; i < volumeDataArray.length; i++){
+      const v = (volumeDataArray[i] - 128) / 128;
+      sumSquares += v * v;
+    }
+    const rms = Math.sqrt(sumSquares / volumeDataArray.length);
+    const now = Date.now();
+    if(rms > Math.max(noiseFloor * 2.8, 0.13) && now - lastVolumeTrigger > 1500){
+      lastVolumeTrigger = now;
+      markVoiceHeard();
+    } else {
+      noiseFloor = noiseFloor * 0.96 + rms * 0.04; // slowly track the ambient room noise level
+    }
+  }, 100);
+}
+function stopVolumeWatch(){
+  clearInterval(volumePollTimer);
+  volumePollTimer = null;
+  if(volumeStream){ volumeStream.getTracks().forEach(t=>t.stop()); volumeStream = null; }
+  volumeAnalyser = null;
+}
+
 function startVoiceListening(){
   if(!recognition) { statusPill.innerHTML = '<b>Voice Mode</b> · not supported in this browser'; return; }
   voiceListening = true;
   voiceSessionStart = Date.now();
   voiceBackoff = 450;
   try{ recognition.start(); }catch(e){ /* already running */ }
+  startVolumeWatch();
   statusPill.innerHTML = `<b>🎤 Listening</b> · say "${state.voiceWord}"`;
 }
 function stopVoiceListening(){
   voiceListening = false;
   clearTimeout(voiceRestartTimer);
   if(recognition){ try{ recognition.stop(); }catch(e){} }
+  stopVolumeWatch();
 }
 // the word was heard — this alone fires the shot if voice is the only active
 // mode, or just satisfies the "voice" gate if combined with face/smile,
@@ -1137,10 +1190,9 @@ function analyzeFrame(){
   const blendshapesSet = result.faceBlendshapes || [];
   const numFaces = landmarksSet.length;
 
-  updateCentering(landmarksSet);
   drawFaceBoxes(landmarksSet);
 
-  // timer only needs the loop for auto-centering — it fires off the countdown, not this gate
+  // timer only needs the loop for face-box drawing, not this gate
   if(state.modes.has('timer')) return;
 
   const needFace = state.modes.has('face');
@@ -1155,11 +1207,14 @@ function analyzeFrame(){
   landmarksSet.forEach((lm)=>{
     let minX=1,maxX=0,minY=1,maxY=0;
     lm.forEach(p=>{
-      if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
-      if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+      const zp = toZoomedNorm(p.x, p.y);
+      if(zp.x<minX)minX=zp.x; if(zp.x>maxX)maxX=zp.x;
+      if(zp.y<minY)minY=zp.y; if(zp.y>maxY)maxY=zp.y;
     });
     framedArr.push(!(minX < EDGE_MARGIN || maxX > 1-EDGE_MARGIN || minY < EDGE_MARGIN || maxY > 1-EDGE_MARGIN));
-    const nose = lm[1], rightEdge = lm[234], leftEdge = lm[454];
+    const nose = toZoomedNorm(lm[1].x, lm[1].y);
+    const rightEdge = toZoomedNorm(lm[234].x, lm[234].y);
+    const leftEdge = toZoomedNorm(lm[454].x, lm[454].y);
     const faceWidth = Math.abs(leftEdge.x - rightEdge.x) || 1;
     const ratio = (nose.x - Math.min(leftEdge.x,rightEdge.x)) / faceWidth;
     frontalArr.push(Math.abs(ratio - 0.5) <= NOSE_CENTER_TOL);
